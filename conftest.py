@@ -1,184 +1,56 @@
-conftest.pyimport pytest
-import datetime
+import pytest, json, os, allure
 from selenium import webdriver
-import logging
+from selenium.webdriver.chrome.options import Options
 
-import pymysql
-import pymysql.cursors
-from database.bitnami_opencart import (
-    delete_product,
-    add_product,
-    delete_customer_by_email,
-)
-
-
-default_url = "http://192.168.100.9:8085"
-default_executor = "192.168.100.9"
-log_level = "DEBUG"
+# Load credentials
+creds_path = os.path.join(os.path.dirname(__file__), 'credentials.json')
+with open(creds_path) as f:
+    CREDENTIALS = json.load(f)
 
 
 def pytest_addoption(parser):
-    parser.addoption(
-        "--browser", action="store", default="chrome", help="browser for tests"
-    )
-    parser.addoption("--bv", action="store", help="browser version")
-    parser.addoption(
-        "--headless",
-        action="store",
-        default=None,
-        help="enable/disable headless mode: 'true' or 'false'",
-    )
-    parser.addoption(
-        "--remote", action="store_true", help="remote launching by default"
-    )
-    parser.addoption("--url", action="store", default=default_url)
-    parser.addoption("--vnc", action="store_true")
-    parser.addoption("--executor", action="store", default=default_executor)
-    parser.addoption("--db_host", action="store", default="host.docker.internal")
-
-
-def docker_option(options):
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-dev-shm-usage")
-
-
-@pytest.fixture
-def browser(request):
-    logger = logging.getLogger(request.node.name)
-    file_handler = logging.FileHandler(f"logs/{request.node.name}.log")
-    file_handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
-    logger.addHandler(file_handler)
-    logger.setLevel(level=log_level)
-    logger.info("===> Test started at %s" % datetime.datetime.now())
-    logger.info("===> Test name: %s" % request.node.name)
-
-    remote = request.config.getoption("remote")
-    browser_name = request.config.getoption("browser")
-
-    headless = request.config.getoption("headless")
-    if headless is not None:
-        headless = headless.lower() == "true"  # "true" -> True, "false" -> False
-
-    browser_version = request.config.getoption("bv")
-
-    logger.info("===> Browser: %s, version: %s" % (browser_name, browser_version))
-
-    vnc = request.config.getoption("vnc")
-    executor = request.config.getoption("executor")
-    executor_url = f"http://{executor}:4444/wd/hub"
-
-    driver = None
-    options = None
-
-    try:
-        if remote:
-            if browser_name in ["chrome", "ch"]:
-                options = webdriver.ChromeOptions()
-                docker_option(options)
-            elif browser_name in ["firefox", "ff"]:
-                options = webdriver.FirefoxOptions()
-                docker_option(options)
-            elif browser_name in ["edge", "ed"]:
-                options = webdriver.EdgeOptions()
-                docker_option(options)
-
-            if options:
-                options.set_capability("browserVersion", browser_version)
-                options.set_capability("selenoid:options", {"name": request.node.name})
-                if vnc:
-                    options.set_capability("selenoid:options", {"enableVNC": True})
-                driver = webdriver.Remote(
-                    command_executor=executor_url, options=options
-                )
-
-        else:
-            if browser_name in ["chrome", "ch"]:
-                options = webdriver.ChromeOptions()
-                docker_option(options)
-                if headless or headless is None:
-                    options.add_argument("--headless=new")
-                    options.add_argument("--window-size=1920,1080")
-                driver = webdriver.Chrome(options=options)
-                driver.maximize_window()
-
-            elif browser_name in ["firefox", "ff"]:
-                options = webdriver.FirefoxOptions()
-                docker_option(options)
-                if headless or headless is None:
-                    options.add_argument("--headless")
-                    options.add_argument("--window-size=1920,1080")
-                driver = webdriver.Firefox(options=options)
-
-            elif browser_name in ["edge", "ed"]:
-                options = webdriver.EdgeOptions()
-                docker_option(options)
-                if headless or headless is None:
-                    options.add_argument("--headless=new")
-                    options.add_argument("--window-size=1920,1080")
-                driver = webdriver.Edge(options=options)
-
-        if driver is None:
-            raise ValueError(f"Unsupported browser: {browser_name}")
-
-        driver.maximize_window()
-        driver.logger = logger  # Добавляем logger к драйверу
-
-        yield driver
-
-        driver.quit()
-
-    except Exception as e:
-        logger.error(f"Failed to initialize browser: {e}")
-        raise
-
-
-@pytest.fixture
-def url(request):
-    return request.config.getoption("--url")
-
-
-# @pytest.fixture()
-# def db_connection():
-#     from database.connection import create_connection
-#
-#     connection = create_connection()
-#     yield connection
-#     connection.close()
-
+    parser.addoption("--url", default="https://www.saucedemo.com", help="Base URL")
+    parser.addoption("--browser", default="chrome", help="Browser: chrome, firefox, edge")
+    parser.addoption("--headless", action="store_true", help="Headless mode")
 
 @pytest.fixture(scope="session")
-def db_connection(request):
-    db_host = request.config.getoption("db_host")
-
-    connection = pymysql.connect(
-        host=db_host,
-        port=3306,
-        database="bitnami_opencart",
-        user="bn_opencart",
-        password="",
-        cursorclass=pymysql.cursors.DictCursor,
-    )
-    yield connection
-
-    connection.close()
-
+def creds():
+    return CREDENTIALS
 
 @pytest.fixture(scope="function")
-def product_creation(db_connection):
-    yield
-    delete_product(db_connection)
+def driver(request):
+    browser = request.config.getoption("--browser")
+    headless = request.config.getoption("--headless")
+    if browser == 'chrome':
+        opts = Options()
+        if headless: opts.add_argument('--headless')
+        drv = webdriver.Chrome(options=opts)
+    elif browser == 'firefox':
+        from selenium.webdriver.firefox.options import Options as FF
+        opts = FF()
+        if headless: opts.add_argument('--headless')
+        drv = webdriver.Firefox(options=opts)
+    else:
+        from selenium.webdriver.edge.options import Options as Ed
+        opts = Ed()
+        if headless: opts.add_argument('--headless')
+        drv = webdriver.Edge(options=opts)
+    drv.implicitly_wait(5)
+    drv.maximize_window()
+    yield drv
+    drv.quit()
 
+# Hook for screenshots on failure
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    rep = outcome.get_result()
+    if rep.when == 'call' and rep.failed:
+        driver = item.funcargs.get('driver')
+        if driver:
+            png = driver.get_screenshot_as_png()
+            allure.attach(png, name='screenshot', attachment_type=allure.attachment_type.PNG)
 
 @pytest.fixture(scope="function")
-def product_deletion(db_connection):
-    add_product(db_connection)
-    yield
-
-
-@pytest.fixture(scope="function")
-def customer_deletion(db_connection):
-    emails_to_delete = []
-    yield emails_to_delete
-    for email in emails_to_delete:
-        delete_customer_by_email(db_connection, email)
+def base_url(request):
+    return request.config.getoption("--url")

@@ -1,9 +1,5 @@
-Faker==36.1.1
-pytest==8.3.4
-pytest-ordering
-pytest-dependency==0.6.0
-ruff==0.9.4
-selenium==4.27.1
-allure-pytest==2.13.5
+selenium
+pytest
 pytest-xdist
-PyMySQL==1.1.1
+allure-pytest
+allure
